@@ -1,27 +1,32 @@
-# Python/cache
+# Python / test / IDE generated files
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
 .venv/
 venv/
 .env
 .idea/
 .vscode/
+*.egg-info/
+build/
+dist/
 
-# Local datasets and generated experiments
+# Never commit local KITTI datasets, outputs, logs, trained weights or reports
 /dataset/
-/data/
 /datasets/
+/data/
 /results/
 /outputs/
 /checkpoints/
 /runs/
 /logs/
-/reports/*.json
+/reports/
 
-# Binary and model artifacts
+# Binary research artifacts (original data and model weights)
 *.pth
 *.pt
 *.ckpt
@@ -30,7 +35,9 @@ venv/
 *.bin
 *.png
 *.jpg
+*.jpeg
 
-# local files
+# OS / temporary files
 .DS_Store
 *.swp
+*~

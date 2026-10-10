@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import statistics
 from pathlib import Path
 
-from audit_kitti import timestamp_ns
+try:
+    from scripts.audit_kitti import timestamp_ns
+except ModuleNotFoundError:
+    from audit_kitti import timestamp_ns
 
 STREAMS = ("oxts", "velodyne_points", "image_02", "image_03")
 DEFAULT_SEQUENCES = ("0027", "0034", "0042", "0047")
@@ -18,7 +22,7 @@ def percentile(values: list[float], percentile_value: float) -> float:
     if not values:
         raise ValueError("percentile on empty sequence")
     ordered = sorted(values)
-    index = max(0, min(len(ordered) - 1, int(__import__("math").ceil(
+    index = max(0, min(len(ordered) - 1, int(math.ceil(
         percentile_value / 100.0 * len(ordered))) - 1))
     return ordered[index]
 

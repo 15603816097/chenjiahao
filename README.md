@@ -56,3 +56,23 @@ python3 scripts/analyze_timing.py --root dataset/kitti/2011_10_03 --report repor
 **验收原则：** 未确认相机曝光、LiDAR 采集与 OXTS 测量的时标关系前，不采用简单的按帧号等时测量假设，不自动平移/插值。后续明确关联策略，并通过不同策略的敏感性实验检查结果。
 
 **后续数据层工作：** 对 OXTS 30 字段、经纬度合法范围、姿态及速度单位、四序列轨迹、标定矩阵进行物理一致性检查；随后设计 Stage 1 GNSS/IMU 固定协方差基线。
+
+## Stage 0C：OXTS 数据与标定的物理一致性检查
+
+已完成 Stage 0A/B 后执行：
+
+```bash
+git pull origin main
+python3 -m unittest discover -s tests -v
+python3 scripts/audit_oxts.py --root dataset/kitti/2011_10_03 --report reports/oxts_audit.json
+```
+
+输出四个 KITTI sync 序列的 OXTS 30 字段解析、位置范围、车辆速度/加速度/角速度统计、导航状态/卫星数分布、OXTS 位置变化与同源 OXTS 速度的一致性检查，以及 IMU↔LiDAR、LiDAR↔Camera 旋转矩阵和双目投影参数的校验。
+
+审计会拒绝损坏的 30 字段测量、NaN/Inf、非法经纬度、缺失/非法标定。物理异常阈值仅产生 `REVIEW`，需人工解释；不可把任意速度阈值当成数据集官方验证结论。
+
+**关键研究约束：** `lat/lon` 与 `vn/ve` 均来自同一 OXTS 定位导航系统；相互比较只是自洽性检查，不是独立真值验证。固定因子图阶段必须显式区分输入测量和用于评价的 OXTS 参考，并标注来源相关性。
+
+**后续：** 看 Stage 0C 的四序列统计决定是否修正传感器单位、坐标系和测量时间关联；之后再进入 Stage 1 GNSS/IMU 基线（此时才需要安装 GTSAM）。
+
+OXTS 字段与同步说明参见 [KITTI Raw 格式说明](https://github.com/yanii/kitti-pcl/blob/master/KITTI_README.TXT)、[KITTI 官方 Raw Data 页面](https://www.cvlibs.net/datasets/kitti/raw_data.php)。

@@ -30,6 +30,32 @@ class OXTSTests(unittest.TestCase):
         self.assertEqual(p["numsats"], 10)
         self.assertAlmostEqual(p["az"], 9.81)
 
+    def test_decimal_encoded_navigation_flags(self):
+        tokens = packet_text().split()
+        tokens[-5:] = [
+            "4.00000000000000", "10.0", "4e0", "4.000", "4"
+        ]
+        record = parse_oxts(" ".join(tokens))
+        self.assertEqual(
+            [record[key] for key in FIELDS[-5:]],
+            [4, 10, 4, 4, 4],
+        )
+        self.assertTrue(all(isinstance(record[key], int) for key in FIELDS[-5:]))
+
+    def test_fractional_and_nonfinite_navigation_flags_rejected(self):
+        for invalid in ("4.5", "nan", "Infinity", "-Infinity", "bad"):
+            with self.subTest(invalid=invalid):
+                tokens = packet_text().split()
+                tokens[-5] = invalid
+                with self.assertRaisesRegex(ValueError, "navstat"):
+                    parse_oxts(" ".join(tokens))
+        for key in FIELDS[-5:]:
+            with self.subTest(field=key):
+                tokens = packet_text().split()
+                tokens[FIELDS.index(key)] = "3.75"
+                with self.assertRaisesRegex(ValueError, key):
+                    parse_oxts(" ".join(tokens))
+
     def test_invalid_record_rejected(self):
         with self.assertRaises(ValueError):
             parse_oxts("1 2 3")

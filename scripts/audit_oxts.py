@@ -11,6 +11,7 @@ import json
 import math
 import statistics
 from collections import Counter
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 try:
@@ -62,7 +63,17 @@ def parse_oxts(text: str) -> dict:
             if not math.isfinite(value):
                 raise ValueError(f"{name} is not finite")
         else:
-            value = int(token)
+            # KITTI OXTS flag fields are categorical integers, but some
+            # sequences serialize them as decimal strings such as
+            # "4.00000000000000". Parse exactly: never silently truncate
+            # a fractional category with int(float(token)).
+            try:
+                decimal_value = Decimal(token)
+            except InvalidOperation as exc:
+                raise ValueError(f"{name} is not a numeric integer: {token!r}") from exc
+            if not decimal_value.is_finite() or decimal_value != decimal_value.to_integral_value():
+                raise ValueError(f"{name} must be a finite integer: {token!r}")
+            value = int(decimal_value)
         values[name] = value
     if not (-90 <= values["lat"] <= 90):
         raise ValueError(f"latitude out of range: {values['lat']}")

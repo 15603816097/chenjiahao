@@ -38,6 +38,8 @@ class TimingTests(unittest.TestCase):
                 60.0,
             )
             self.assertTrue(any("velodyne_points" in flag for flag in report["review_flags"]))
+            self.assertEqual(len(report["streams"]["velodyne_points"]["large_offset_frames"]), 3)
+            self.assertEqual(report["streams"]["velodyne_points"]["large_offset_frames"][0]["signed_offset_ms"], 60.0)
             self.assertAlmostEqual(
                 report["stereo_image_03_minus_image_02"]["signed_ms"]["median"], 2.0
             )

@@ -9,7 +9,7 @@
 | Stage 0A 数据完整性 | 已完成 | 4 个序列帧数/编号一致；必要标定文件存在 |
 | Stage 0B 时间分析 | 已完成初步诊断 | 采样时间单调；0027 前几帧有超过 50 ms 的跨传感器偏差，待制定时间关联方案 |
 | Stage 0C OXTS/标定检查 | 已完成初步诊断 | 13 个本地单测通过、4 个序列成功解析，未触发程序物理异常告警；RGB 双目基线 0.532332 m |
-| Stage 1 GNSS/IMU 基线 | 待开始 | 建立准确坐标定义、时间关联、固定测量协方差与 GTSAM 因子图 |
+| Stage 1A WGS84/ECEF/ENU | 已提交，待本地验证 | 无第三方依赖的米制 ENU 转换、4 序列 OXTS 同源运动一致性检查 |\n| Stage 1B GNSS/IMU 因子图 | 待开始 | 坐标/时间验证通过后，再设计 GTSAM 状态向量、惯性约束和固定噪声 GNSS 因子 |
 | Stage 2 四传感器基线 | 待开始 | 独立的 LiDAR/双目里程计和统一因子图 |
 | Stage 3–5 鲁棒性、学习与论文实验 | 待开始 | 根据前一阶段证据决定是否引入 GRU/Mamba |
 
@@ -20,14 +20,18 @@
 ```text
 chenjiahao/
 ├── dataset/              # 本地 KITTI 数据，Git 忽略
+├── src/
+│   └── coordinates.py     # WGS84 → ECEF → ENU，单位米
 ├── scripts/              # 可执行的数据验证工具
 │   ├── audit_kitti.py
 │   ├── analyze_timing.py
-│   └── audit_oxts.py
+│   ├── audit_oxts.py
+│   └── validate_coordinates.py
 ├── tests/                # 对应单元测试
 │   ├── test_audit_kitti.py
 │   ├── test_analyze_timing.py
-│   └── test_audit_oxts.py
+│   ├── test_audit_oxts.py
+│   └── test_coordinates.py
 ├── reports/              # 检查报告，本地生成，Git 忽略
 ├── .gitignore
 └── README.md
@@ -40,6 +44,7 @@ python3 -m unittest discover -s tests -v
 python3 scripts/audit_kitti.py --sequence dataset/kitti/2011_10_03/2011_10_03_drive_0027_sync --report reports/0027_audit.json
 python3 scripts/analyze_timing.py --root dataset/kitti/2011_10_03 --report reports/timing_analysis.json
 python3 scripts/audit_oxts.py --root dataset/kitti/2011_10_03 --report reports/oxts_audit.json
+python3 scripts/validate_coordinates.py --root dataset/kitti/2011_10_03 --report reports/coordinates_summary.json
 ```
 
 阈值触发的 `REVIEW` 表示需分析，不表示数据损坏。完成脚本测试不等于完成最终测量模型与定位准确性验证。
@@ -61,6 +66,6 @@ python3 scripts/audit_oxts.py --root dataset/kitti/2011_10_03 --report reports/o
 
 ## 下一步
 
-Stage 1A：定义 GNSS/IMU 测量与状态坐标系（WGS84 → ECEF → ENU、IMU body frame）；验证四条轨迹/速度与单位、确认 GNSS 与 OXTS 参考的使用边界。随后在 Stage 1B 实现 GTSAM 固定噪声 GNSS/IMU 因子图。
+验证 Stage 1A：先 `git pull origin main`，执行 `python3 -m unittest discover -s tests -v`，再执行 `python3 scripts/validate_coordinates.py --root dataset/kitti/2011_10_03 --report reports/coordinates_summary.json`。预期 18 个单测（尚需本机验证）。审计输出四段轨迹的 ENU 终点、3D 行驶距离、相邻位置差分与 OXTS 自带速度的一致性。**坐标系原点为各序列首帧 OXTS，坐标单位为米；未经验证的高度基准暂按椭球高近似。** 与 OXTS 速度的一致性检验不是独立定位精度评价。验证通过后再进入 Stage 1B GTSAM 固定噪声 GNSS/IMU 因子图。
 
 参考：[KITTI Raw](https://www.cvlibs.net/datasets/kitti/raw_data.php) · [KITTI Odometry](https://www.cvlibs.net/datasets/kitti/eval_odometry.php)

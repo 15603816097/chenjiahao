@@ -63,7 +63,9 @@ def _check_samples(files: list[Path], kind: str, errors: list[str]) -> None:
                 if size == 0 or size % 16 != 0:
                     errors.append("LiDAR .bin not float32 Nx4: " + str(path))
             elif kind.startswith("image_"):
-                if path.open("rb").read(8) != b"\x89PNG\r\n\x1a\n":
+                with path.open("rb") as image_file:
+                    signature = image_file.read(8)
+                if signature != b"\x89PNG\r\n\x1a\n":
                     errors.append("Invalid PNG signature: " + str(path))
             elif kind == "oxts":
                 parts = path.read_text(encoding="utf-8").split()

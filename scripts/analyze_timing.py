@@ -83,11 +83,21 @@ def analyze_sequence(sequence: Path, review_threshold_ms: float = 50.0) -> dict:
         med = statistics.median(intervals)
         gaps = sum(delta > 1.5 * med for delta in intervals)
         offsets = offset_stats(reference, values)
+        outlier_rows = sorted(
+            ((abs((sensor_ns - ref_ns) / 1e6), i, (sensor_ns - ref_ns) / 1e6)
+             for i, (ref_ns, sensor_ns) in enumerate(zip(reference, values))
+             if abs(sensor_ns - ref_ns) / 1e6 > review_threshold_ms),
+            reverse=True,
+        )[:5]
         result["streams"][stream] = {
             "frame_count": len(values),
             "frame_interval_ms": summary(intervals),
             "gaps_over_1p5x_median": gaps,
             "relative_to_oxts": offsets,
+            "large_offset_frames": [
+                {"frame": i, "signed_offset_ms": round(signed, 6)}
+                for _, i, signed in outlier_rows
+            ],
         }
         if stream != "oxts" and offsets["absolute_ms"]["max"] > review_threshold_ms:
             result["review_flags"].append(
@@ -126,6 +136,9 @@ def main() -> int:
                       f"gaps={item['gaps_over_1p5x_median']}")
             print("  stereo max absolute difference (ms):",
                   out["stereo_image_03_minus_image_02"]["absolute_ms"]["max"])
+            for name, entry in out["streams"].items():
+                if entry["large_offset_frames"]:
+                    print(f"  {name} outlier frames:", entry["large_offset_frames"])
             for flag in out["review_flags"]:
                 print("  REVIEW:", flag)
         except (OSError, ValueError) as exc:

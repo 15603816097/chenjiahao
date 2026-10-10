@@ -42,3 +42,17 @@ Stage 0 通过：检查脚本在本地真实序列上退出码为 0，所有必�
 - KITTI Odometry: https://www.cvlibs.net/datasets/kitti/eval_odometry.php
 
 **注意：**旧项目 DFG 保留用于历史回溯，不直接复制旧算法与实验结果作为新论文成果。
+
+## Stage 0B：时序对齐诊断（在 Stage 0 通过之后执行）
+
+```bash
+git pull
+python3 -m unittest discover -s tests -v
+python3 scripts/analyze_timing.py --root dataset/kitti/2011_10_03 --report reports/timing_analysis.json
+```
+
+该脚本输出每种传感器相对 OXTS 的时间偏差（signed = sensor - OXTS）的中位数、95 分位绝对偏差、最大绝对偏差、时间间隔及疑似大间隔。超过 50 ms 标记 `REVIEW`，这只是诊断阈值，不等同于数据损坏。
+
+**验收原则：** 未确认相机曝光、LiDAR 采集与 OXTS 测量的时标关系前，不采用简单的按帧号等时测量假设，不自动平移/插值。后续明确关联策略，并通过不同策略的敏感性实验检查结果。
+
+**后续数据层工作：** 对 OXTS 30 字段、经纬度合法范围、姿态及速度单位、四序列轨迹、标定矩阵进行物理一致性检查；随后设计 Stage 1 GNSS/IMU 固定协方差基线。

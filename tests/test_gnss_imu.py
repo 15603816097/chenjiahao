@@ -94,6 +94,20 @@ class GNSSIMUTests(unittest.TestCase):
         self.assertTrue(motion["later_oxts_navigation_used_for_diagnostics_only"])
         self.assertLess(motion["imu_accel_minus_oxts_dvdt_rmse_mps2"], 1e-6)
         self.assertLess(motion["imu_gyro_minus_oxts_attitude_rate_rmse_radps"], 1e-6)
+        self.assertEqual(
+            set(motion["imu_gyro_minus_oxts_attitude_rate_axis_mean_radps"]),
+            {"X", "Y", "Z"},
+        )
+        self.assertEqual(
+            set(motion["imu_gyro_minus_oxts_attitude_rate_axis_rmse_radps"]),
+            {"X", "Y", "Z"},
+        )
+        self.assertTrue(all(
+            abs(x) < 1e-6
+            for x in motion["imu_gyro_minus_oxts_attitude_rate_axis_rmse_radps"].values()
+        ))
+        self.assertLess(motion["accel_difference_norm_rmse_first_half_mps2"], 1e-6)
+        self.assertLess(motion["accel_difference_norm_rmse_second_half_mps2"], 1e-6)
         self.assertAlmostEqual(output["oxts_position_fit_rmse_first_half_m"], 0.0, delta=0.5)
         self.assertAlmostEqual(output["oxts_position_fit_rmse_second_half_m"], 0.0, delta=0.5)
 

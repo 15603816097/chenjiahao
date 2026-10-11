@@ -223,6 +223,14 @@ def run_gtsam(samples: list[Sample], noise: FixedNoise, iterations: int = 30) ->
     accel_axis_rmse = np.sqrt(np.mean(accel_errors ** 2, axis=0))
     rate_axis_mean = np.mean(rate_errors, axis=0)
     rate_axis_rmse = np.sqrt(np.mean(rate_errors ** 2, axis=0))
+    # Support the smallest valid two-frame graph (one IMU interval).
+    # Without this guard a half-window becomes empty and its RMSE is NaN.
+    half_interval = max(1, len(accel_errors) // 2)
+    early_accel_errors = accel_errors[:half_interval]
+    late_accel_errors = (
+        accel_errors[half_interval:]
+        if half_interval < len(accel_errors) else accel_errors[-1:]
+    )
     diagnostics = []
     if kinematic_accel_rmse > 2.0:
         diagnostics.append(
@@ -281,14 +289,10 @@ def run_gtsam(samples: list[Sample], noise: FixedNoise, iterations: int = 30) ->
                 for i, axis in enumerate(("X", "Y", "Z"))
             },
             "accel_difference_norm_rmse_first_half_mps2": float(
-                np.sqrt(np.mean(np.sum(
-                    accel_errors[:len(accel_errors)//2] ** 2, axis=1
-                )))
+                np.sqrt(np.mean(np.sum(early_accel_errors ** 2, axis=1)))
             ),
             "accel_difference_norm_rmse_second_half_mps2": float(
-                np.sqrt(np.mean(np.sum(
-                    accel_errors[len(accel_errors)//2:] ** 2, axis=1
-                )))
+                np.sqrt(np.mean(np.sum(late_accel_errors ** 2, axis=1)))
             ),
             "assumed_axes": (
                 "KITTI body ax/ay/az and wx/wy/wz interpreted forward/left/up "

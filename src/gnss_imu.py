@@ -165,22 +165,55 @@ def run_gtsam(samples: list[Sample], noise: FixedNoise, iterations: int = 30) ->
     after = float(graph.error(result))
     if not math.isfinite(after):
         raise RuntimeError("Non-finite GTSAM objective")
-    residuals = [
-        float(np.linalg.norm(
-            result.atPose3(X(i)).translation() - np.asarray(s.position_enu_m)
-        )) for i, s in enumerate(samples)
-    ]
+    # Signed per-axis discrepancy = estimated state minus INPUT OXTS fix.
+    # Unlike independent ATE, this is strictly an in-sample measurement fit.
+    target = np.array([sample.position_enu_m for sample in samples], dtype=float)
+    initialized = np.array([
+        values.atPose3(X(i)).translation() for i in range(len(samples))
+    ], dtype=float)
+    estimated = np.array([
+        result.atPose3(X(i)).translation() for i in range(len(samples))
+    ], dtype=float)
+    differences = estimated - target
+    residual_norms = np.linalg.norm(differences, axis=1)
+    initial_norms = np.linalg.norm(initialized - target, axis=1)
+    axis_rmse = np.sqrt(np.mean(differences ** 2, axis=0))
+    axis_mean = np.mean(differences, axis=0)
+    worst_frame = int(np.argmax(residual_norms))
+    total_rmse = float(np.sqrt(np.mean(residual_norms ** 2)))
+    diagnostics = []
+    if total_rmse > noise.gps_sigma_xy:
+        diagnostics.append(
+            "OXTS position fit RMSE exceeds configured horizontal GPS sigma; "
+            "inspect component residuals, sparse IMU compatibility, and initialization"
+        )
+    if after > before + 1e-6:
+        diagnostics.append("Optimizer objective increased; inspect convergence")
+
     return {
         "frames": len(samples),
         "factor_count": int(graph.size()),
         "initial_objective": before,
         "optimized_objective": after,
-        "oxts_position_fit_rmse_m": float(
-            math.sqrt(sum(d*d for d in residuals) / len(residuals))
+        "oxts_position_fit_rmse_m": total_rmse,
+        "initial_oxts_position_fit_rmse_m": float(
+            np.sqrt(np.mean(initial_norms ** 2))
         ),
-        "last_estimated_enu_m": [
-            float(v) for v in result.atPose3(X(len(samples)-1)).translation()
-        ],
+        "oxts_position_fit_axis_rmse_m": {
+            axis: float(axis_rmse[i]) for i, axis in enumerate("ENU")
+        },
+        "oxts_position_fit_axis_mean_m": {
+            axis: float(axis_mean[i]) for i, axis in enumerate("ENU")
+        },
+        "oxts_position_fit_median_m": float(np.median(residual_norms)),
+        "oxts_position_fit_p95_m": float(np.percentile(residual_norms, 95)),
+        "oxts_position_fit_max_m": float(residual_norms[worst_frame]),
+        "oxts_position_fit_max_frame": worst_frame,
+        "oxts_position_fit_first_frame_m": float(residual_norms[0]),
+        "oxts_position_fit_last_frame_m": float(residual_norms[-1]),
+        "last_oxts_input_enu_m": [float(v) for v in target[-1]],
+        "last_estimated_enu_m": [float(v) for v in estimated[-1]],
+        "diagnostic_warnings": diagnostics,
         "description": "GTSAM GPSFactor/ImuFactor + random-walk IMU bias",
         "caution": (
             "Uses 10 Hz synchronized OXTS position/acceleration/angular rate. "

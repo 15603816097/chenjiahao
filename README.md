@@ -10,7 +10,7 @@
 | Stage 0B 时间分析 | 初步完成 | OXTS ~10 Hz；0027 前几帧与相机/LiDAR 相差 >50 ms，需保留真实时间戳 |
 | Stage 0C OXTS/标定审计 | 已通过初步检查 | 4 序列 OXTS 30 字段解析正常，RGB 双目基线 0.532332 m |
 | Stage 1A WGS84 → ENU | 已通过 | 本地18个测试通过；4段轨迹和 OXTS 速度自洽性检查通过 |
-| **Stage 1B 固定噪声 GTSAM** | **数值试运行成功，物理一致性待查** | 本地22个单测通过；0027 前40帧因子图运行成功；输入位置拟合 RMSE 6.372 m |
+| **Stage 1B 固定噪声 GTSAM** | **数值试运行成功，物理一致性待查** | 本地23个单测通过；0–19帧输入位置拟合2.0269m，20–39帧0.0923m，连续0–39帧6.3716m；物理一致性待确认 |
 | Stage 2 四传感器 | 未开始 | 需独立 LiDAR/双目里程计 |
 | Stage 3–5 退化/鲁棒性/Mamba/论文 | 未开始 | 先建立可信固定噪声基线 |
 
@@ -73,18 +73,25 @@ python scripts/run_gnss_imu.py --sequence 0027 --frames 40 --iterations 30
 
 最新 `src/gnss_imu.py` 提供 X/Y/Z 陀螺仪分轴残差、分时段加速度残差，并把最终目标函数分解成**位置因子代价**和**IMU/先验/零偏因子合计代价**。根据用户本地 40 帧结果，使用位置因子的公式计算，约 `67.4208 / 67.6474 ≈ 99.67%` 的最终代价来自 OXTS 位置因子。这提示当前运动约束与位置测量之间的置信度或物理模型不匹配，不能直接断言 IMU 本身坏了。
 
-下一步比较相同 20 帧长度的**起始窗口**与**后段窗口**，检查前期运动不一致是否造成后续积累；不更改噪声参数，也不新增临时调试文件。运行：
+**2026-10-11 已完成等长20帧分段实验（所有窗口单独以首帧 OXTS 初始化）：**
+
+| 窗口 | OXTS位置拟合RMSE | IMU vs OXTS dv/dt RMSE | gyro vs OXTS dR/dt RMSE |
+|---|---:|---:|---:|
+| 0–19帧 | 2.0269 m | 1.8673 m/s² | 0.1479 rad/s |
+| 20–39帧 | 0.0923 m | 0.2975 m/s² | 0.0308 rad/s |
+| 0–39帧 | 6.3716 m | 1.3208 m/s² | 0.1055 rad/s |
+
+**诊断结论：** 开头约2秒的数据与当前机体/姿态/稀疏IMU模型的相容性明显较差；后20帧独立初始化后可很好拟合输入OXTS位置，不能直接归因于IMU硬件启动故障。跨窗口连续优化可能受早期约束不一致和过高的IMU相对权重影响；这是待验证假设。不同窗口重新初始化且时长不等，0.0923m仅是输入测量拟合，不是独立定位精度。
+
+下一步只运行**同样40帧长度、不同起始位置**的对照（不改源码、噪声或优化方法）：
 
 ```bash
-git pull origin main
 conda activate chenjiahao
-python -m unittest discover -s tests -v
-python scripts/run_gnss_imu.py --sequence 0027 --start-frame 0 --frames 20 --report reports/gnss_imu_0027_first20.json
-python scripts/run_gnss_imu.py --sequence 0027 --start-frame 20 --frames 20 --report reports/gnss_imu_0027_later20.json
-python scripts/run_gnss_imu.py --sequence 0027 --start-frame 0 --frames 40 --report reports/gnss_imu_stage1b.json
+cd ~/chenjiahao
+python scripts/run_gnss_imu.py --sequence 0027 --start-frame 20 --frames 40 --iterations 30 --report reports/gnss_imu_0027_20_59.json
 ```
 
-每个窗口以该窗口第一个 OXTS 点为局部 ENU 原点、首帧姿态/速度为初值。窗口各自重设初值，因此**比较仅用于定位瞬态问题，不是公平的定位精度排行榜**。上述噪声参数均是工程值、未经真实传感器噪声标定；10 Hz OXTS ZOH 积分不代表高频原始 IMU 实验。下一步优先获取未同步的高频 OXTS/IMU 或独立来源 GNSS，建立真正可靠的状态估计评价协议。
+将该结果与已经执行的0–39帧40帧窗口比较，核查是否仅为开头暂态导致的模型失配。实验若仍异常，应优先转向原始高频IMU和合理的协方差标定，而不是反复修改噪声强行贴合OXTS轨迹。完整KITTI unsynced/extract包非常大，采购/下载前需要先确认是否可仅取得OXTS资料。
 
 ## 科研约束
 

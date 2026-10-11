@@ -71,7 +71,20 @@ python scripts/run_gnss_imu.py --sequence 0027 --frames 40 --iterations 30
 - IMU 角速度与 OXTS 姿态导数的差异 RMSE 0.1055 rad/s。
 - 这些数字只指示**同源数据的一致性与工程数值问题**，不等于独立定位误差，也不能据此断定错误来自某一传感器或坐标轴。
 
-最新 `src/gnss_imu.py` 增加 X/Y/Z 陀螺仪分轴残差及前/后半段加速度残差统计。通过重复运行上述40帧命令查看 `kinematic_consistency` 字段；暂不修改因子图噪声和优化约束。
+最新 `src/gnss_imu.py` 提供 X/Y/Z 陀螺仪分轴残差、分时段加速度残差，并把最终目标函数分解成**位置因子代价**和**IMU/先验/零偏因子合计代价**。根据用户本地 40 帧结果，使用位置因子的公式计算，约 `67.4208 / 67.6474 ≈ 99.67%` 的最终代价来自 OXTS 位置因子。这提示当前运动约束与位置测量之间的置信度或物理模型不匹配，不能直接断言 IMU 本身坏了。
+
+下一步比较相同 20 帧长度的**起始窗口**与**后段窗口**，检查前期运动不一致是否造成后续积累；不更改噪声参数，也不新增临时调试文件。运行：
+
+```bash
+git pull origin main
+conda activate chenjiahao
+python -m unittest discover -s tests -v
+python scripts/run_gnss_imu.py --sequence 0027 --start-frame 0 --frames 20 --report reports/gnss_imu_0027_first20.json
+python scripts/run_gnss_imu.py --sequence 0027 --start-frame 20 --frames 20 --report reports/gnss_imu_0027_later20.json
+python scripts/run_gnss_imu.py --sequence 0027 --start-frame 0 --frames 40 --report reports/gnss_imu_stage1b.json
+```
+
+每个窗口以该窗口第一个 OXTS 点为局部 ENU 原点、首帧姿态/速度为初值。窗口各自重设初值，因此**比较仅用于定位瞬态问题，不是公平的定位精度排行榜**。上述噪声参数均是工程值、未经真实传感器噪声标定；10 Hz OXTS ZOH 积分不代表高频原始 IMU 实验。下一步优先获取未同步的高频 OXTS/IMU 或独立来源 GNSS，建立真正可靠的状态估计评价协议。
 
 ## 科研约束
 

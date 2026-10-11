@@ -1,126 +1,84 @@
 # Chenjiahao · 车载多传感器融合状态估计
 
-从零构建可复现的车载 GNSS/IMU/LiDAR/Camera 融合状态估计研究。研究顺序：**数据验证 → 固定噪声因子图 → 退化与传统鲁棒基线 → 可靠性预测 → 动态融合 → 跨序列实验**。Mamba 是候选方法，不提前承诺其必然有效。
+基于 KITTI Raw 开展可复现的 GNSS/IMU/LiDAR/Camera 状态估计研究。**先保证数据、坐标系与测量模型正确，再开展鲁棒因子图及 Mamba 动态可靠性研究。**
 
-## 当前进度（2026-10-10）
+## 当前状态（2026-10-11）
 
-| 阶段 | 状态 | 已验证内容 |
-| --- | --- | --- |
-| Stage 0A 数据完整性 | 已完成 | 4 个序列帧数/编号一致；必要标定文件存在 |
-| Stage 0B 时间分析 | 已完成初步诊断 | 采样时间单调；0027 前几帧有超过 50 ms 的跨传感器偏差，待制定时间关联方案 |
-| Stage 0C OXTS/标定检查 | 已完成初步诊断 | 13 个本地单测通过、4 个序列成功解析，未触发程序物理异常告警；RGB 双目基线 0.532332 m |
-| Stage 1A WGS84/ECEF/ENU | 已通过 | 18 项本地测试通过；四序列 ENU 验证完成，同源速度差分一致性正常 |
-| Stage 1B GNSS/IMU 因子图 | 40 帧试运行完成，误差待诊断 | 0027: 121 因子；目标函数 106.014→67.647；OXTS 输入位置拟合 RMSE 6.372 m，不能作为独立 ATE |
-| Stage 2 四传感器基线 | 待开始 | 独立的 LiDAR/双目里程计和统一因子图 |
-| Stage 3–5 鲁棒性、学习与论文实验 | 待开始 | 根据前一阶段证据决定是否引入 GRU/Mamba |
+| 阶段 | 状态 | 验证结果 |
+|---|---|---|
+| Stage 0A 数据完整性 | 已通过 | 4 段 KITTI Raw 同步数据结构与标定文件检查通过 |
+| Stage 0B 时间分析 | 初步完成 | OXTS ~10 Hz；0027 前几帧与相机/LiDAR 相差 >50 ms，需保留真实时间戳 |
+| Stage 0C OXTS/标定审计 | 已通过初步检查 | 4 序列 OXTS 30 字段解析正常，RGB 双目基线 0.532332 m |
+| Stage 1A WGS84 → ENU | 已通过 | 本地18个测试通过；4段轨迹和 OXTS 速度自洽性检查通过 |
+| **Stage 1B 固定噪声 GTSAM** | **数值试运行成功，物理一致性待查** | 本地22个单测通过；0027 前40帧因子图运行成功；输入位置拟合 RMSE 6.372 m |
+| Stage 2 四传感器 | 未开始 | 需独立 LiDAR/双目里程计 |
+| Stage 3–5 退化/鲁棒性/Mamba/论文 | 未开始 | 先建立可信固定噪声基线 |
 
-本地 KITTI Raw 目录：`dataset/kitti/2011_10_03/`，包含 `0027`（4544 帧）、`0034`（4663 帧）、`0042`（1170 帧）、`0047`（837 帧），每段采用 `2011_10_03_drive_XXXX_sync` 命名。**数据集不上传至 GitHub。**
-
-## 当前必要目录
+## 项目文件结构
 
 ```text
 chenjiahao/
-├── dataset/              # 本地 KITTI 数据，Git 忽略
+├── dataset/kitti/2011_10_03/   # 本地数据；Git 忽略
 ├── src/
-│   ├── coordinates.py     # WGS84 → ECEF → ENU，单位米
-│   └── gnss_imu.py        # 固定噪声 GTSAM GNSS/IMU 试运行实现
-├── scripts/              # 可执行的数据验证工具
-│   ├── audit_kitti.py
-│   ├── analyze_timing.py
-│   ├── audit_oxts.py
-│   ├── validate_coordinates.py
-│   └── run_gnss_imu.py
-├── tests/                # 对应单元测试
-│   ├── test_audit_kitti.py
-│   ├── test_analyze_timing.py
-│   ├── test_audit_oxts.py
-│   ├── test_coordinates.py
-│   └── test_gnss_imu.py
-├── reports/              # 检查报告，本地生成，Git 忽略
-├── requirements.txt      # Stage 1B GTSAM 与 NumPy 最小依赖
+│   ├── coordinates.py          # WGS84/ECEF/ENU 坐标转换
+│   └── gnss_imu.py             # 固定噪声 GTSAM 试运行与误差诊断
+├── scripts/
+│   ├── audit_kitti.py          # Stage 0A 文件完整性
+│   ├── analyze_timing.py       # Stage 0B 时间戳
+│   ├── audit_oxts.py           # Stage 0C OXTS 物理量与标定
+│   ├── validate_coordinates.py # Stage 1A ENU/轨迹验证
+│   └── run_gnss_imu.py         # Stage 1B GTSAM 运行入口
+├── tests/                      # 5 个对应的回归测试文件
+├── reports/                    # 本地生成，不进入 Git
+├── requirements.txt
 ├── .gitignore
 └── README.md
 ```
 
-## 当前验证命令（项目根目录执行）
+这 5 个脚本各有唯一用途：**Stage 0 的审计程序仍是数据质量和论文可复现性证据，不属于废弃文件**。删除文件前检查依赖与实验复现价值；只有确实无用途的才删除。避免出现 `_new`、`_final`、`_fix` 等重复版本，历史版本由 Git 记录。
 
-```bash
-python3 -m unittest discover -s tests -v
-python3 scripts/audit_kitti.py --sequence dataset/kitti/2011_10_03/2011_10_03_drive_0027_sync --report reports/0027_audit.json
-python3 scripts/analyze_timing.py --root dataset/kitti/2011_10_03 --report reports/timing_analysis.json
-python3 scripts/audit_oxts.py --root dataset/kitti/2011_10_03 --report reports/oxts_audit.json
-python3 scripts/validate_coordinates.py --root dataset/kitti/2011_10_03 --report reports/coordinates_summary.json
-```
+## 环境与运行
 
-阈值触发的 `REVIEW` 表示需分析，不表示数据损坏。完成脚本测试不等于完成最终测量模型与定位准确性验证。
-
-## 实验可信度约束
-
-1. KITTI Raw `*_sync` 的 OXTS 约为 10 Hz，**不能当作完整 100 Hz 原始 IMU**；因子图使用实际时间间隔，时间关联策略必须留档。
-2. OXTS 位置、速度、姿态属于同一导航源：用 OXTS 测量做状态估计并以同源 OXTS 轨迹评价，**不属于独立真实精度验证**。合成 GNSS 退化实验须明确其评价限制。
-3. 训练、验证、最终测试序列在建模前预先登记；已接触的 `0027/0034/0042/0047` 不自动被视为完全盲测数据。所有基线采用相同评估协议。
-4. 坐标系、测量噪声、标定和时间偏差均通过单元测试及数值检查验证，不能依赖未经证明的固定时间步长或测量独立性假设。
-
-## 代码与文件管理制度
-
-- **一项功能一个正式实现**；优先修改已有模块，不创建 `_new`、`_final`、`_fix2` 等版本叠加脚本。实验版本由 Git commit 和配置记录。
-- 所有核心代码遵循 `src/` 负责可复用逻辑、`scripts/` 负责可执行入口、`tests/` 负责回归测试。只在需要时新增目录，不预先创建空目录。
-- 修改前检查调用方、数据格式、参数和测试；修改后运行相关测试。对外提供能直接覆盖使用的完整文件。
-- 不提交 `__pycache__`、测试缓存、临时文件、原始数据、模型权重和生成报告；由 `.gitignore` 管理。旧的可复现审计脚本与测试仍有用，**不得只为减文件数量就删除**。
-- 确认没有任何调用与复现价值的文件才删除，并同步修正导入路径、测试、文档。大型实验结果应由参数、随机种子、代码提交号和指标文件追溯。
-
-## Stage 1B：固定噪声 GNSS/IMU 工程试运行
-
-当前使用 KITTI Raw 的 OXTS 同步（约 10 Hz）数据；这**不是**完整高频原始 IMU，也不是独立 GNSS 与独立参考真值的融合精度实验。`GPSFactor` 输入来自 OXTS 经纬度；IMU 因子使用同源 OXTS 的 `ax/ay/az` 与 `wx/wy/wz`。只有第一帧的 OXTS 姿态、速度用于初始化；后续姿态/速度不会用于因子图初始化或观测。其用途仅为验证因子图连接、单位、重力符号和数值稳定性。
-
-推荐 Python 3.11 独立环境（后续考虑 Mamba 兼容），不要污染 base：
+Linux / Python 3.11，GTSAM 4.3.0。建议独立 Conda 环境：
 
 ```bash
 conda create -n chenjiahao python=3.11 -y
 conda activate chenjiahao
 python -m pip install -r requirements.txt
-python -m unittest discover -s tests -v
-python scripts/run_gnss_imu.py --sequence 0027 --frames 40 --iterations 30
 ```
 
-结果写入 `reports/gnss_imu_stage1b.json`（被 Git 忽略）。报告包含因子图目标函数初始值与优化值、因子数量、局部 ENU 终点和**OXTS 测量残差**。该残差绝不可标注为独立定位 ATE，不能用于 ISJ 论文的真实精度提升声明。首次试运行先处理 40 帧，待通过后再讨论扩展序列与稀疏积分的替代方案。
-
-数值/坐标约定：世界 ENU，车体前/左/上（与 KITTI IMU 坐标一致），第一帧 `yaw,pitch,roll` 使用 GTSAM 的 `Rot3.Ypr`；预积分使用 ENU 的 `MakeSharedU(g)`，重力方向为 `(0,0,-g)`；每一相邻帧使用真实时间差，用当前同步 OXTS IMU 近似零阶保持（ZOH）。噪声暂是工程固定值，未经标定与公允基线验证。
-
-参考：[KITTI Raw 字段](https://github.com/pratikac/kitti/blob/master/readme.raw.txt) · [GTSAM IMU 因子](https://borglab.github.io/gtsam/imufactor/) · [GTSAM 重力约定](https://borglab.github.io/gtsam/preintegrationparams/)。
-
-## Stage 1B 真实数据诊断（2026-10-11）
-
-第一次真实 0027 前 40 帧试验已运行：初始因子图目标函数 106.014，优化后 67.647，121 个因子（4 个初始先验/首帧 GPS 因子 + 39×3 个运动、偏置、位置因子）；OXTS 输入位置拟合 RMSE 6.372 m。数值优化成功，**但 GNSS 位置拟合偏差仍较大，Stage 1B 尚不能视为物理/精度验收通过**。没有独立真值和高频 IMU，不能将其包装成论文精度提升。
-
-为定位问题，已在 `src/gnss_imu.py` 现有函数内增加 OXTS 位置拟合的 E/N/U 分轴 RMSE、分轴均值、首末帧误差、95 分位、最大误差帧、优化前拟合 RMSE、输入与优化终点。避免另建 `_debug` 脚本。
+在项目根目录：
 
 ```bash
-git pull origin main
-conda activate chenjiahao
 python -m unittest discover -s tests -v
+python scripts/audit_kitti.py --sequence dataset/kitti/2011_10_03/2011_10_03_drive_0027_sync --report reports/0027_audit.json
+python scripts/analyze_timing.py --root dataset/kitti/2011_10_03 --report reports/timing_analysis.json
+python scripts/audit_oxts.py --root dataset/kitti/2011_10_03 --report reports/oxts_audit.json
+python scripts/validate_coordinates.py --root dataset/kitti/2011_10_03 --report reports/coordinates_summary.json
 python scripts/run_gnss_imu.py --sequence 0027 --frames 40 --iterations 30
 ```
 
-结果会覆盖本地 `reports/gnss_imu_stage1b.json`。不要急于调协方差使 RMSE 变小；先判断误差是否主要来自 ENU 高度/运动约束、初值、10 Hz IMU ZOH 积分、或者测量相关性。阶段下一步需设计未使用同源 OXTS 位置作为独立真值的评估方案，并在能获得高频原始 IMU 时升级预积分。
+模型与测试脚本只使用必要的包。不要上传 KITTI 原始数据、`__pycache__`、临时报告、模型权重等文件，已通过 `.gitignore` 排除。
 
-## Stage 1B 本次异常诊断（0027 前 40 帧）
+## Stage 1B 已观测问题
 
-2026-10-11 已实测：22 个测试通过；优化目标由 106.0144 降到 67.6474，但 **OXTS 输入位置拟合 RMSE 仍为 6.3716 m**，东/北/上三个分轴分别为 4.7338 / 1.4698 / 4.0035 m，最大位置偏差位于第 39 帧（13.8492 m）。这说明数值优化能运行，**并不证明 IMU 运动约束正确或定位准确**。
+0027 前 40 帧使用约 10 Hz 同步 OXTS 进行工程验证（非正式定位精度实验）：
 
-为排查误差，已在现有 `src/gnss_imu.py` 中增加同源 OXTS 的**运动学一致性诊断**。它用 OXTS 姿态将 IMU 比力转换到 ENU 并扣除重力，再与 OXTS 速度差分比较；也比较陀螺仪角速度与相邻 OXTS 姿态变化。后续帧的 OXTS 姿态与速度**仅用于报告，不作为新约束或初始化**。
+- 因子图：121 因子；初始目标函数 106.0144，优化后 67.6474。
+- 相对**输入 OXTS 位置**的三维拟合 RMSE：**6.3716 m**（E=4.7338、N=1.4698、U=4.0035 m）。
+- 前半段位置拟合 RMSE 1.7987 m，后半段 8.8295 m；第 39 帧最大偏差 13.8492 m。
+- IMU 加速度转换到 ENU（加上重力）与 OXTS 速度导数比较，三维差异 RMSE 1.3208 m/s²；主要来自 Up（RMSE 1.2900，均值 +0.7141 m/s²）。
+- IMU 角速度与 OXTS 姿态导数的差异 RMSE 0.1055 rad/s。
+- 这些数字只指示**同源数据的一致性与工程数值问题**，不等于独立定位误差，也不能据此断定错误来自某一传感器或坐标轴。
 
-```bash
-git pull origin main
-conda activate chenjiahao
-python -m unittest discover -s tests -v
-python scripts/run_gnss_imu.py --sequence 0027 --frames 40 --iterations 30
-```
+最新 `src/gnss_imu.py` 增加 X/Y/Z 陀螺仪分轴残差及前/后半段加速度残差统计。通过重复运行上述40帧命令查看 `kinematic_consistency` 字段；暂不修改因子图噪声和优化约束。
 
-新报告的 `kinematic_consistency` 将给出加速度与角速度残差，同时列出前/后半段位置 RMSE。不能根据单一残差直接判断是哪根轴错误，更不能在未核对机体系和 KITTI 外参时随意反转 IMU 方向。KITTI 公开文档副本对 GPS/IMU 轴描述存在不同版本，必须依赖实际数据与标定交叉核验。现有 10 Hz ZOH 预积分仍是工程近似；噪声参数仍未标定。
+## 科研约束
 
-## 下一步
+1. KITTI Raw `*_sync` OXTS 约10 Hz，**不是完整100 Hz原始 IMU**。目前 ZOH 预积分是临时工程近似，不得声称高频 IMU 精度。
+2. OXTS 经纬度、速度、姿态均来自同一 OXTS 导航系统。首帧速度/姿态仅用于 GTSAM 初值，后续姿态/速度仅用于**离线诊断**；输入 OXTS 位置与同源参考轨迹的拟合不能当作独立 ATE。
+3. ENU 为世界坐标、单位米；重力取 `(0,0,-9.81)`。机体坐标为前/左/上，姿态根据 KITTI OXTS 角度定义实现，需用运动学与标定证据继续核验。
+4. `0027/0034/0042/0047` 已用于开发验证，不应自动视为从未使用的最终盲测数据；后续实验需登记训练/验证/测试划分及独立评价方案。
+5. 修改源文件前检查调用方、测试与数据结构；修改后运行测试。保留版本控制，避免无用文件和重复代码。
 
-Stage 1A 已由本地 18 个单元测试与四段真实数据的坐标诊断验证。审计输出四段轨迹的 ENU 终点、3D 行驶距离、相邻位置差分与 OXTS 自带速度的一致性。**坐标系原点为各序列首帧 OXTS，坐标单位为米；未经验证的高度基准暂按椭球高近似。** 与 OXTS 速度的一致性检验不是独立定位精度评价。验证通过后再进入 Stage 1B GTSAM 固定噪声 GNSS/IMU 因子图。
-
-参考：[KITTI Raw](https://www.cvlibs.net/datasets/kitti/raw_data.php) · [KITTI Odometry](https://www.cvlibs.net/datasets/kitti/eval_odometry.php)
+参考：[KITTI Raw](https://www.cvlibs.net/datasets/kitti/raw_data.php) · [KITTI OXTS 字段说明](https://github.com/pratikac/kitti/blob/master/readme.raw.txt) · [GTSAM PreintegrationParams](https://borglab.github.io/gtsam/preintegrationparams/)。

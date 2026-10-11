@@ -47,11 +47,15 @@ class FixedNoise:
                 raise ValueError(f"{name} must be finite and positive")
 
 
-def load_samples(sequence: Path, max_frames: int) -> list[Sample]:
+def load_samples(sequence: Path, max_frames: int, start_frame: int = 0) -> list[Sample]:
+    """Read a contiguous OXTS frame window, with local ENU origin at its first frame."""
     if max_frames < 2:
         raise ValueError("max_frames must be >= 2")
+    if start_frame < 0:
+        raise ValueError("start_frame must be >= 0")
     packets, times = read_sequence_oxts(sequence)
-    packets, times = packets[:max_frames], times[:max_frames]
+    end_frame = start_frame + max_frames
+    packets, times = packets[start_frame:end_frame], times[start_frame:end_frame]
     if len(packets) < 2:
         raise ValueError("Need at least two synchronized OXTS samples")
     origin = tuple(packets[0][k] for k in ("lat", "lon", "alt"))
@@ -213,6 +217,19 @@ def run_gtsam(samples: list[Sample], noise: FixedNoise, iterations: int = 30) ->
     axis_mean = np.mean(differences, axis=0)
     worst_frame = int(np.argmax(residual_norms))
     total_rmse = float(np.sqrt(np.mean(residual_norms ** 2)))
+    # GPSFactor adds (1/2) * ||(estimate - OXTS fix) / sigma||^2.
+    # All current GPSFactor measurements use the same diagonal covariance.
+    # The remaining objective comprises IMU, bias and initial-prior factors.
+    gps_sigmas = np.array([
+        noise.gps_sigma_xy, noise.gps_sigma_xy, noise.gps_sigma_z
+    ])
+    gps_factor_cost = 0.5 * float(np.sum((differences / gps_sigmas) ** 2))
+    other_factor_cost = after - gps_factor_cost
+    gps_factor_fraction = gps_factor_cost / after if after > 0.0 else None
+    if other_factor_cost < -1e-6:
+        raise RuntimeError(
+            "Negative non-GPS objective: GPS factor decomposition is inconsistent"
+        )
     kinematic_accel_rmse = float(np.sqrt(np.mean(
         np.sum(accel_errors ** 2, axis=1)
     )))
@@ -244,12 +261,26 @@ def run_gtsam(samples: list[Sample], noise: FixedNoise, iterations: int = 30) ->
         )
     if after > before + 1e-6:
         diagnostics.append("Optimizer objective increased; inspect convergence")
+    if gps_factor_fraction is not None and gps_factor_fraction > 0.95:
+        diagnostics.append(
+            "Over 95% of optimized factor-graph cost comes from OXTS position "
+            "factors; review relative measurement weights and sparse-IMU model"
+        )
 
     return {
         "frames": len(samples),
         "factor_count": int(graph.size()),
         "initial_objective": before,
         "optimized_objective": after,
+        "objective_breakdown": {
+            "oxts_position_factors": gps_factor_cost,
+            "imu_bias_and_priors_combined": other_factor_cost,
+            "position_fraction_of_total": gps_factor_fraction,
+            "caution": (
+                "Relative factor cost is diagnostic only. It does not prove "
+                "which model is wrong or imply a correct parameter setting."
+            ),
+        },
         "oxts_position_fit_rmse_m": total_rmse,
         "initial_oxts_position_fit_rmse_m": float(
             np.sqrt(np.mean(initial_norms ** 2))

@@ -89,6 +89,15 @@ class GNSSIMUTests(unittest.TestCase):
             report["kinematic_consistency"]["imu_gyro_minus_oxts_attitude_rate_rmse_radps"],
             1e-6,
         )
+        # Regression for the single-interval split (two-node factor graph).
+        tiny = run_gtsam(samples[:2], FixedNoise(), iterations=10)
+        self.assertEqual(tiny["frames"], 2)
+        self.assertTrue(math.isfinite(
+            tiny["kinematic_consistency"]["accel_difference_norm_rmse_first_half_mps2"]
+        ))
+        self.assertTrue(math.isfinite(
+            tiny["kinematic_consistency"]["accel_difference_norm_rmse_second_half_mps2"]
+        ))
 
     def test_optional_gtsam_stationary_smoke(self):
         try:

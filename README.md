@@ -104,6 +104,21 @@ python scripts/run_gnss_imu.py --sequence 0027 --frames 40 --iterations 30
 
 结果会覆盖本地 `reports/gnss_imu_stage1b.json`。不要急于调协方差使 RMSE 变小；先判断误差是否主要来自 ENU 高度/运动约束、初值、10 Hz IMU ZOH 积分、或者测量相关性。阶段下一步需设计未使用同源 OXTS 位置作为独立真值的评估方案，并在能获得高频原始 IMU 时升级预积分。
 
+## Stage 1B 本次异常诊断（0027 前 40 帧）
+
+2026-10-11 已实测：22 个测试通过；优化目标由 106.0144 降到 67.6474，但 **OXTS 输入位置拟合 RMSE 仍为 6.3716 m**，东/北/上三个分轴分别为 4.7338 / 1.4698 / 4.0035 m，最大位置偏差位于第 39 帧（13.8492 m）。这说明数值优化能运行，**并不证明 IMU 运动约束正确或定位准确**。
+
+为排查误差，已在现有 `src/gnss_imu.py` 中增加同源 OXTS 的**运动学一致性诊断**。它用 OXTS 姿态将 IMU 比力转换到 ENU 并扣除重力，再与 OXTS 速度差分比较；也比较陀螺仪角速度与相邻 OXTS 姿态变化。后续帧的 OXTS 姿态与速度**仅用于报告，不作为新约束或初始化**。
+
+```bash
+git pull origin main
+conda activate chenjiahao
+python -m unittest discover -s tests -v
+python scripts/run_gnss_imu.py --sequence 0027 --frames 40 --iterations 30
+```
+
+新报告的 `kinematic_consistency` 将给出加速度与角速度残差，同时列出前/后半段位置 RMSE。不能根据单一残差直接判断是哪根轴错误，更不能在未核对机体系和 KITTI 外参时随意反转 IMU 方向。KITTI 公开文档副本对 GPS/IMU 轴描述存在不同版本，必须依赖实际数据与标定交叉核验。现有 10 Hz ZOH 预积分仍是工程近似；噪声参数仍未标定。
+
 ## 下一步
 
 Stage 1A 已由本地 18 个单元测试与四段真实数据的坐标诊断验证。审计输出四段轨迹的 ENU 终点、3D 行驶距离、相邻位置差分与 OXTS 自带速度的一致性。**坐标系原点为各序列首帧 OXTS，坐标单位为米；未经验证的高度基准暂按椭球高近似。** 与 OXTS 速度的一致性检验不是独立定位精度评价。验证通过后再进入 Stage 1B GTSAM 固定噪声 GNSS/IMU 因子图。

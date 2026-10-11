@@ -9,7 +9,8 @@
 | Stage 0A 数据完整性 | 已完成 | 4 个序列帧数/编号一致；必要标定文件存在 |
 | Stage 0B 时间分析 | 已完成初步诊断 | 采样时间单调；0027 前几帧有超过 50 ms 的跨传感器偏差，待制定时间关联方案 |
 | Stage 0C OXTS/标定检查 | 已完成初步诊断 | 13 个本地单测通过、4 个序列成功解析，未触发程序物理异常告警；RGB 双目基线 0.532332 m |
-| Stage 1A WGS84/ECEF/ENU | 已通过 | 18 项本地测试通过；四序列 ENU 验证完成，同源速度差分一致性正常 |\n| Stage 1B GNSS/IMU 因子图 | 已提交试运行，待验证 | 固定噪声 GPSFactor/ImuFactor、IMU bias 随机游走，仅以同步 OXTS 进行工程验证 |
+| Stage 1A WGS84/ECEF/ENU | 已通过 | 18 项本地测试通过；四序列 ENU 验证完成，同源速度差分一致性正常 |
+| Stage 1B GNSS/IMU 因子图 | 40 帧试运行完成，误差待诊断 | 0027: 121 因子；目标函数 106.014→67.647；OXTS 输入位置拟合 RMSE 6.372 m，不能作为独立 ATE |
 | Stage 2 四传感器基线 | 待开始 | 独立的 LiDAR/双目里程计和统一因子图 |
 | Stage 3–5 鲁棒性、学习与论文实验 | 待开始 | 根据前一阶段证据决定是否引入 GRU/Mamba |
 
@@ -87,6 +88,21 @@ python scripts/run_gnss_imu.py --sequence 0027 --frames 40 --iterations 30
 数值/坐标约定：世界 ENU，车体前/左/上（与 KITTI IMU 坐标一致），第一帧 `yaw,pitch,roll` 使用 GTSAM 的 `Rot3.Ypr`；预积分使用 ENU 的 `MakeSharedU(g)`，重力方向为 `(0,0,-g)`；每一相邻帧使用真实时间差，用当前同步 OXTS IMU 近似零阶保持（ZOH）。噪声暂是工程固定值，未经标定与公允基线验证。
 
 参考：[KITTI Raw 字段](https://github.com/pratikac/kitti/blob/master/readme.raw.txt) · [GTSAM IMU 因子](https://borglab.github.io/gtsam/imufactor/) · [GTSAM 重力约定](https://borglab.github.io/gtsam/preintegrationparams/)。
+
+## Stage 1B 真实数据诊断（2026-10-11）
+
+第一次真实 0027 前 40 帧试验已运行：初始因子图目标函数 106.014，优化后 67.647，121 个因子（4 个初始先验/首帧 GPS 因子 + 39×3 个运动、偏置、位置因子）；OXTS 输入位置拟合 RMSE 6.372 m。数值优化成功，**但 GNSS 位置拟合偏差仍较大，Stage 1B 尚不能视为物理/精度验收通过**。没有独立真值和高频 IMU，不能将其包装成论文精度提升。
+
+为定位问题，已在 `src/gnss_imu.py` 现有函数内增加 OXTS 位置拟合的 E/N/U 分轴 RMSE、分轴均值、首末帧误差、95 分位、最大误差帧、优化前拟合 RMSE、输入与优化终点。避免另建 `_debug` 脚本。
+
+```bash
+git pull origin main
+conda activate chenjiahao
+python -m unittest discover -s tests -v
+python scripts/run_gnss_imu.py --sequence 0027 --frames 40 --iterations 30
+```
+
+结果会覆盖本地 `reports/gnss_imu_stage1b.json`。不要急于调协方差使 RMSE 变小；先判断误差是否主要来自 ENU 高度/运动约束、初值、10 Hz IMU ZOH 积分、或者测量相关性。阶段下一步需设计未使用同源 OXTS 位置作为独立真值的评估方案，并在能获得高频原始 IMU 时升级预积分。
 
 ## 下一步
 

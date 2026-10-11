@@ -78,6 +78,16 @@ class GNSSIMUTests(unittest.TestCase):
                              output["initial_objective"] + 1e-5)
         self.assertTrue(math.isfinite(output["oxts_position_fit_rmse_m"]))
         self.assertLess(output["oxts_position_fit_rmse_m"], 0.5)
+        self.assertEqual(output["frames"], 4)
+        self.assertEqual(output["factor_count"], 13)
+        self.assertEqual(set(output["oxts_position_fit_axis_rmse_m"]), {"E", "N", "U"})
+        self.assertTrue(all(math.isfinite(v) for v in
+                            output["oxts_position_fit_axis_rmse_m"].values()))
+        self.assertEqual(output["oxts_position_fit_max_frame"], 0)
+        self.assertAlmostEqual(output["oxts_position_fit_last_frame_m"], 0.0, delta=0.5)
+        self.assertEqual(len(output["last_oxts_input_enu_m"]), 3)
+        self.assertEqual(len(output["last_estimated_enu_m"]), 3)
+        self.assertIsInstance(output["diagnostic_warnings"], list)
 
 
 if __name__ == "__main__":

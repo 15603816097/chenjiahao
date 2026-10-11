@@ -19,15 +19,19 @@ def main() -> int:
     parser.add_argument("--root", default="dataset/kitti/2011_10_03")
     parser.add_argument("--sequence", default="0027", choices=("0027", "0034", "0042", "0047"))
     parser.add_argument("--frames", type=int, default=40)
+    parser.add_argument("--start-frame", type=int, default=0,
+                        help="Start index of a contiguous OXTS window (default 0)")
     parser.add_argument("--iterations", type=int, default=30)
     parser.add_argument("--report", default="reports/gnss_imu_stage1b.json")
     args = parser.parse_args()
 
     path = Path(args.root).expanduser().resolve() / f"2011_10_03_drive_{args.sequence}_sync"
-    samples = load_samples(path, args.frames)
+    samples = load_samples(path, args.frames, start_frame=args.start_frame)
     result = run_gtsam(samples, FixedNoise(), iterations=args.iterations)
     result.update({
         "sequence": args.sequence,
+        "start_frame": args.start_frame,
+        "end_frame_inclusive": args.start_frame + len(samples) - 1,
         "stage": "1B",
         "research_status": "engineering smoke test only",
         "parameter_note": "Uncalibrated fixed noise settings; not a tuned reference baseline.",

@@ -55,6 +55,41 @@ class GNSSIMUTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "max_frames"):
             load_samples(Path("/nonexistent"), max_frames=1)
 
+    def test_optional_gtsam_constant_east_acceleration(self):
+        # Dynamic smoke: known eastward acceleration with gravity compensation.
+        # Unlike the zero-motion fixture, this exercises the x-axis and dt^2
+        # position integration in GTSAM without changing production parameters.
+        try:
+            import gtsam  # noqa: F401
+            import numpy  # noqa: F401
+        except ImportError:
+            self.skipTest("GTSAM not installed")
+        a_east = 0.6
+        initial_speed = 1.25
+        samples = []
+        for i in range(8):
+            t = 0.1 * i
+            samples.append(Sample(
+                time_ns=1_000_000_000 + 100_000_000 * i,
+                position_enu_m=(initial_speed * t + 0.5 * a_east * t * t, 0.0, 0.0),
+                accel_body_mps2=(a_east, 0.0, 9.81),
+                gyro_body_radps=(0.0, 0.0, 0.0),
+                init_velocity_enu_mps=(initial_speed + a_east * t, 0.0, 0.0),
+                init_yaw_pitch_roll_rad=(0.0, 0.0, 0.0),
+            ))
+        report = run_gtsam(samples, FixedNoise(), iterations=20)
+        self.assertEqual(report["frames"], 8)
+        self.assertEqual(report["factor_count"], 25)
+        self.assertLess(report["oxts_position_fit_rmse_m"], 1e-4)
+        self.assertLess(
+            report["kinematic_consistency"]["imu_accel_minus_oxts_dvdt_rmse_mps2"],
+            1e-6,
+        )
+        self.assertLess(
+            report["kinematic_consistency"]["imu_gyro_minus_oxts_attitude_rate_rmse_radps"],
+            1e-6,
+        )
+
     def test_optional_gtsam_stationary_smoke(self):
         try:
             import gtsam  # noqa: F401

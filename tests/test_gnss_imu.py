@@ -89,6 +89,13 @@ class GNSSIMUTests(unittest.TestCase):
         self.assertEqual(len(output["last_oxts_input_enu_m"]), 3)
         self.assertEqual(len(output["last_estimated_enu_m"]), 3)
         self.assertIsInstance(output["diagnostic_warnings"], list)
+        self.assertIn("kinematic_consistency", output)
+        motion = output["kinematic_consistency"]
+        self.assertTrue(motion["later_oxts_navigation_used_for_diagnostics_only"])
+        self.assertLess(motion["imu_accel_minus_oxts_dvdt_rmse_mps2"], 1e-6)
+        self.assertLess(motion["imu_gyro_minus_oxts_attitude_rate_rmse_radps"], 1e-6)
+        self.assertAlmostEqual(output["oxts_position_fit_rmse_first_half_m"], 0.0, delta=0.5)
+        self.assertAlmostEqual(output["oxts_position_fit_rmse_second_half_m"], 0.0, delta=0.5)
 
 
 if __name__ == "__main__":

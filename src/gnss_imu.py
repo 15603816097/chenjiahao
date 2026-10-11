@@ -219,6 +219,10 @@ def run_gtsam(samples: list[Sample], noise: FixedNoise, iterations: int = 30) ->
     kinematic_rate_rmse = float(np.sqrt(np.mean(
         np.sum(rate_errors ** 2, axis=1)
     )))
+    accel_axis_mean = np.mean(accel_errors, axis=0)
+    accel_axis_rmse = np.sqrt(np.mean(accel_errors ** 2, axis=0))
+    rate_axis_mean = np.mean(rate_errors, axis=0)
+    rate_axis_rmse = np.sqrt(np.mean(rate_errors ** 2, axis=0))
     diagnostics = []
     if kinematic_accel_rmse > 2.0:
         diagnostics.append(
@@ -260,14 +264,32 @@ def run_gtsam(samples: list[Sample], noise: FixedNoise, iterations: int = 30) ->
             "later_oxts_navigation_used_for_diagnostics_only": True,
             "imu_accel_minus_oxts_dvdt_rmse_mps2": kinematic_accel_rmse,
             "imu_accel_minus_oxts_dvdt_axis_mean_mps2": {
-                axis: float(np.mean(accel_errors[:, i]))
+                axis: float(accel_axis_mean[i])
                 for i, axis in enumerate("ENU")
             },
             "imu_accel_minus_oxts_dvdt_axis_rmse_mps2": {
-                axis: float(np.sqrt(np.mean(accel_errors[:, i] ** 2)))
+                axis: float(accel_axis_rmse[i])
                 for i, axis in enumerate("ENU")
             },
             "imu_gyro_minus_oxts_attitude_rate_rmse_radps": kinematic_rate_rmse,
+            "imu_gyro_minus_oxts_attitude_rate_axis_mean_radps": {
+                axis: float(rate_axis_mean[i])
+                for i, axis in enumerate(("X", "Y", "Z"))
+            },
+            "imu_gyro_minus_oxts_attitude_rate_axis_rmse_radps": {
+                axis: float(rate_axis_rmse[i])
+                for i, axis in enumerate(("X", "Y", "Z"))
+            },
+            "accel_difference_norm_rmse_first_half_mps2": float(
+                np.sqrt(np.mean(np.sum(
+                    accel_errors[:len(accel_errors)//2] ** 2, axis=1
+                )))
+            ),
+            "accel_difference_norm_rmse_second_half_mps2": float(
+                np.sqrt(np.mean(np.sum(
+                    accel_errors[len(accel_errors)//2:] ** 2, axis=1
+                )))
+            ),
             "assumed_axes": (
                 "KITTI body ax/ay/az and wx/wy/wz interpreted forward/left/up "
                 "and Rot3.Ypr used for OXTS Euler angles; verify on data"

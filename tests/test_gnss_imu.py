@@ -50,10 +50,17 @@ class GNSSIMUTests(unittest.TestCase):
             self.assertEqual(
                 (samples[1].time_ns - samples[0].time_ns) / 1e9, 0.1
             )
+            # Select a later window without introducing another implementation.
+            later = load_samples(sequence, max_frames=2, start_frame=1)
+            self.assertEqual(later[0].time_ns, samples[1].time_ns)
+            self.assertLess(math.dist(later[0].position_enu_m, (0, 0, 0)), 1e-6)
+            self.assertGreater(later[1].position_enu_m[0], 0.0)
 
     def test_too_few_frames(self):
         with self.assertRaisesRegex(ValueError, "max_frames"):
             load_samples(Path("/nonexistent"), max_frames=1)
+        with self.assertRaisesRegex(ValueError, "start_frame"):
+            load_samples(Path("/nonexistent"), max_frames=2, start_frame=-1)
 
     def test_optional_gtsam_constant_east_acceleration(self):
         # Dynamic smoke: known eastward acceleration with gravity compensation.
@@ -81,6 +88,13 @@ class GNSSIMUTests(unittest.TestCase):
         self.assertEqual(report["frames"], 8)
         self.assertEqual(report["factor_count"], 25)
         self.assertLess(report["oxts_position_fit_rmse_m"], 1e-4)
+        breakdown = report["objective_breakdown"]
+        self.assertAlmostEqual(
+            breakdown["oxts_position_factors"]
+            + breakdown["imu_bias_and_priors_combined"],
+            report["optimized_objective"], places=8
+        )
+        self.assertGreaterEqual(breakdown["imu_bias_and_priors_combined"], -1e-6)
         self.assertLess(
             report["kinematic_consistency"]["imu_accel_minus_oxts_dvdt_rmse_mps2"],
             1e-6,

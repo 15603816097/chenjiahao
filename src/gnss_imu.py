@@ -165,6 +165,38 @@ def run_gtsam(samples: list[Sample], noise: FixedNoise, iterations: int = 30) ->
     after = float(graph.error(result))
     if not math.isfinite(after):
         raise RuntimeError("Non-finite GTSAM objective")
+    # Diagnose whether the measured body acceleration and angular rate are
+    # compatible with OXTS navigation velocity / attitude changes. Later OXTS
+    # navigation values are used HERE ONLY, never as optimization factors.
+    gravity_enu = np.array([0.0, 0.0, -noise.gravity_mps2])
+    accel_errors = []
+    rate_errors = []
+    for i in range(len(samples) - 1):
+        a, b = samples[i], samples[i + 1]
+        dt = (b.time_ns - a.time_ns) / 1e9
+        rot_a = gtsam.Rot3.Ypr(*a.init_yaw_pitch_roll_rad)
+        rot_b = gtsam.Rot3.Ypr(*b.init_yaw_pitch_roll_rad)
+        measured_world_accel = (
+            rot_a.rotate(np.asarray(a.accel_body_mps2, dtype=float))
+            + gravity_enu
+        )
+        navigation_dv_dt = (
+            np.asarray(b.init_velocity_enu_mps, dtype=float)
+            - np.asarray(a.init_velocity_enu_mps, dtype=float)
+        ) / dt
+        accel_errors.append(measured_world_accel - navigation_dv_dt)
+        body_rate_from_nav_attitude = (
+            gtsam.Rot3.Logmap(rot_a.between(rot_b)) / dt
+        )
+        rate_errors.append(
+            np.asarray(a.gyro_body_radps, dtype=float)
+            - body_rate_from_nav_attitude
+        )
+    accel_errors = np.asarray(accel_errors, dtype=float)
+    rate_errors = np.asarray(rate_errors, dtype=float)
+    if not np.isfinite(accel_errors).all() or not np.isfinite(rate_errors).all():
+        raise RuntimeError("Non-finite OXTS/IMU kinematic diagnostics")
+
     # Signed per-axis discrepancy = estimated state minus INPUT OXTS fix.
     # Unlike independent ATE, this is strictly an in-sample measurement fit.
     target = np.array([sample.position_enu_m for sample in samples], dtype=float)
@@ -181,7 +213,18 @@ def run_gtsam(samples: list[Sample], noise: FixedNoise, iterations: int = 30) ->
     axis_mean = np.mean(differences, axis=0)
     worst_frame = int(np.argmax(residual_norms))
     total_rmse = float(np.sqrt(np.mean(residual_norms ** 2)))
+    kinematic_accel_rmse = float(np.sqrt(np.mean(
+        np.sum(accel_errors ** 2, axis=1)
+    )))
+    kinematic_rate_rmse = float(np.sqrt(np.mean(
+        np.sum(rate_errors ** 2, axis=1)
+    )))
     diagnostics = []
+    if kinematic_accel_rmse > 2.0:
+        diagnostics.append(
+            "IMU acceleration minus OXTS velocity derivative RMSE exceeds "
+            "2 m/s^2 (review only): inspect body axes, gravity and 10 Hz sampling"
+        )
     if total_rmse > noise.gps_sigma_xy:
         diagnostics.append(
             "OXTS position fit RMSE exceeds configured horizontal GPS sigma; "
@@ -213,6 +256,30 @@ def run_gtsam(samples: list[Sample], noise: FixedNoise, iterations: int = 30) ->
         "oxts_position_fit_last_frame_m": float(residual_norms[-1]),
         "last_oxts_input_enu_m": [float(v) for v in target[-1]],
         "last_estimated_enu_m": [float(v) for v in estimated[-1]],
+        "kinematic_consistency": {
+            "later_oxts_navigation_used_for_diagnostics_only": True,
+            "imu_accel_minus_oxts_dvdt_rmse_mps2": kinematic_accel_rmse,
+            "imu_accel_minus_oxts_dvdt_axis_mean_mps2": {
+                axis: float(np.mean(accel_errors[:, i]))
+                for i, axis in enumerate("ENU")
+            },
+            "imu_accel_minus_oxts_dvdt_axis_rmse_mps2": {
+                axis: float(np.sqrt(np.mean(accel_errors[:, i] ** 2)))
+                for i, axis in enumerate("ENU")
+            },
+            "imu_gyro_minus_oxts_attitude_rate_rmse_radps": kinematic_rate_rmse,
+            "assumed_axes": (
+                "KITTI body ax/ay/az and wx/wy/wz interpreted forward/left/up "
+                "and Rot3.Ypr used for OXTS Euler angles; verify on data"
+            ),
+            "caution": "Same-source OXTS consistency, not independent IMU accuracy.",
+        },
+        "oxts_position_fit_rmse_first_half_m": float(
+            np.sqrt(np.mean(residual_norms[:len(samples)//2] ** 2))
+        ),
+        "oxts_position_fit_rmse_second_half_m": float(
+            np.sqrt(np.mean(residual_norms[len(samples)//2:] ** 2))
+        ),
         "diagnostic_warnings": diagnostics,
         "description": "GTSAM GPSFactor/ImuFactor + random-walk IMU bias",
         "caution": (

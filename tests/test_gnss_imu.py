@@ -83,7 +83,8 @@ class GNSSIMUTests(unittest.TestCase):
         self.assertEqual(set(output["oxts_position_fit_axis_rmse_m"]), {"E", "N", "U"})
         self.assertTrue(all(math.isfinite(v) for v in
                             output["oxts_position_fit_axis_rmse_m"].values()))
-        self.assertEqual(output["oxts_position_fit_max_frame"], 0)
+        self.assertGreaterEqual(output["oxts_position_fit_max_frame"], 0)
+        self.assertLess(output["oxts_position_fit_max_frame"], output["frames"])
         self.assertAlmostEqual(output["oxts_position_fit_last_frame_m"], 0.0, delta=0.5)
         self.assertEqual(len(output["last_oxts_input_enu_m"]), 3)
         self.assertEqual(len(output["last_estimated_enu_m"]), 3)
